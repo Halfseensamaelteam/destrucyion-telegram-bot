@@ -1,19 +1,12 @@
 # Termux Development Guide
 
-This document outlines how to set up and run `destrucyion-telegram-bot` on Android using Termux.
-
-> **Why special instructions?**  
-> Some dependencies (`cryptography`, `pydantic-core`, `ruff`, `watchfiles`) require compiling from Rust/C source code. On Android ARM64, this can take **30–60 minutes** and may fail. The guide below uses Termux's own pre-compiled packages where possible to avoid this.
+> **Root Cause of Slowness:** Python 3.14 (which Termux ships) has **no pre-built ARM64 wheels** on PyPI for packages like `pydantic-core`, `cryptography`, and `watchfiles`. So any tool that tries to install them will trigger a slow Rust/C compilation (30–60 min). The instructions below avoid this entirely.
 
 ---
 
 ## Prerequisites
 
-Install [Termux](https://f-droid.org/en/packages/com.termux/) from **F-Droid** (not the Google Play version — it is outdated and unsupported).
-
----
-
-## 1. Update Package Manager
+Install [Termux](https://f-droid.org/en/packages/com.termux/) from **F-Droid** (not the Play Store version — it is outdated).
 
 ```bash
 pkg update && pkg upgrade -y
@@ -21,26 +14,24 @@ pkg update && pkg upgrade -y
 
 ---
 
-## 2. Install System-level Dependencies via `pkg`
-
-`pkg` provides pre-compiled binaries for Android ARM64. Install heavy packages this way to **avoid long source compilation**:
+## 1. Install System Dependencies via `pkg`
 
 ```bash
-# Core runtime + build tools
+# Core tools
 pkg install -y python git openssl libffi
 
-# Pre-compiled heavy packages (avoids 30-60 min Rust compile)
-pkg install -y python-cryptography python-pydantic
+# Pre-compiled Python packages (avoids Rust/C compilation entirely)
+pkg install -y python-cryptography
 
-# uv package manager (via pkg — faster than pip on Android)
+# uv package manager
 pkg install -y uv
 ```
 
-> **Note:** Do NOT use `pip install cryptography` or `pip install pydantic-core` — those will trigger source compilation on ARM64 because PyPI has no Android ARM wheels.
+> `pkg install python-pydantic` does not exist in Termux — that's OK, we'll handle pydantic differently below.
 
 ---
 
-## 3. Clone Repository
+## 2. Clone Repository
 
 ```bash
 git clone https://github.com/cahsun147/destrucyion-telegram-bot.git
@@ -49,7 +40,7 @@ cd destrucyion-telegram-bot
 
 ---
 
-## 4. Setup Environment Variables
+## 3. Setup Environment Variables
 
 ```bash
 cp .env.example .env
@@ -65,68 +56,81 @@ Open `.env` and fill in your values:
 nano .env
 ```
 
-Required fields in `.env`:
+Key fields to fill in:
 - `SESSION_ENCRYPTION_KEY` — paste the key generated above
 - `API_ID`, `API_HASH` — from https://my.telegram.org
 - `BOT_TOKEN` — from @BotFather
-- `DATABASE_URL` — your PostgreSQL URL or a local SQLite fallback (see note below)
+- `DATABASE_URL` — use SQLite for local dev (see note below)
 
-> **SQLite fallback for local dev:** If you don't have a Postgres instance, set:
+> **SQLite for local dev (recommended on Termux):**
 > ```
 > DATABASE_URL=sqlite+aiosqlite:///./dev.db
 > ```
+> No Postgres setup needed this way.
 
 ---
 
-## 5. Create Virtual Environment with System Site Packages
+## 4. Create Virtual Environment & Install Dependencies
 
-This allows uv to **reuse** the pre-compiled `cryptography` and `pydantic` from step 2 instead of recompiling them:
+Use Python's built-in venv with `--system-site-packages` so the venv can see Termux's pre-compiled `cryptography`:
 
 ```bash
-uv venv --system-site-packages .venv
+# Create venv
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+
+# Install packages — --prefer-binary finds compatible manylinux wheels
+# installs sqlite extra for aiosqlite (SQLite async driver)
+pip install --prefer-binary \
+    fastapi \
+    uvicorn \
+    telethon \
+    pydantic \
+    "pydantic-settings" \
+    sqlalchemy \
+    alembic \
+    aiosqlite \
+    python-dotenv \
+    structlog \
+    httpx \
+    "python-telegram-bot"
+```
+
+> **Why not `uv sync`?** `uv` on Python 3.14/ARM64 builds everything from source. `pip install --prefer-binary` actively picks compatible pre-built manylinux wheels where available.
+
+---
+
+## 5. Verify Installation
+
+```bash
+python -c "import cryptography, pydantic, fastapi, telethon, sqlalchemy; print('All OK')"
 ```
 
 ---
 
-## 6. Install Project Dependencies (Production only — no dev extras)
+## 6. Run the Application
 
-```bash
-uv sync --no-dev
-```
-
-This skips `ruff`, `watchfiles`, and `ast-serialize` (dev/lint tools that require long Rust compilation and are not needed to run the bot).
-
----
-
-## 7. Verify Installation
-
-```bash
-uv run python -c "import cryptography, pydantic, fastapi, telethon; print('All OK')"
-```
-
----
-
-## 8. Run the Application
-
-You need two Termux sessions (or use `tmux`):
+You need two Termux sessions (or install `tmux`: `pkg install tmux`):
 
 **Terminal 1 — FastAPI App:**
 ```bash
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+source .venv/bin/activate
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 **Terminal 2 — Worker Supervisor:**
 ```bash
-uv run python -m worker.main
+source .venv/bin/activate
+python -m worker.main
 ```
 
 ---
 
-## Tips for Termux
+## Tips
 
 | Problem | Solution |
 |---|---|
-| Android kills background worker | Run `termux-wake-lock` before starting the worker |
-| `uv sync` compiling for ages | Use `--no-dev` and `--system-site-packages` as above |
-| `pip install` fails for native packages | Use `pkg install python-<package>` instead |
-| Want multiple terminals | Install `tmux`: `pkg install tmux` |
+| Android kills background worker | Run `termux-wake-lock` before starting worker |
+| `uv sync` compiling for ages | Use `pip install --prefer-binary` as above instead |
+| `pkg install python-pydantic` not found | Normal — install via pip as shown above |
+| Want multiple terminals without a second session | `pkg install tmux` then use `tmux new-session` |
