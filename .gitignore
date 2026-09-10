@@ -1,0 +1,46 @@
+# --- Secrets / credentials (never commit) ---
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+sessions/
+credentials/
+*.key
+*.pem
+
+# --- Downloaded / user media (never commit) ---
+downloads/
+media/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+dist/
+build/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+
+# --- Docker ---
+*.log
+
+# --- Alembic ---
+# (keep migration scripts, ignore local sqlite dev DB if used)
+*.sqlite3
+*.db
+
+# --- Antigravity / agent local state (if any is created locally) ---
+.agents/local/
