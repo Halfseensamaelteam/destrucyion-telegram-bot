@@ -99,3 +99,30 @@ class TelegramAccountRepository:
         await self._session.flush()
         await self._session.refresh(account)
         return account
+
+    async def update_session(
+        self,
+        account: TelegramAccount,
+        *,
+        session_ciphertext: str,
+        telegram_user_id: int | None = None,
+        username: str | None = None,
+        status: TelegramAccountStatus = TelegramAccountStatus.ACTIVE,
+    ) -> TelegramAccount:
+        """Store the encrypted session ciphertext after a successful login.
+
+        The caller must pass the ciphertext only — never the plaintext session string.
+        """
+        from datetime import datetime, timezone
+
+        account.session_ciphertext = session_ciphertext
+        account.status = status
+        account.last_connected_at = datetime.now(timezone.utc)
+        account.last_error = None
+        if telegram_user_id is not None:
+            account.telegram_user_id = telegram_user_id
+        if username is not None:
+            account.username = username
+        await self._session.flush()
+        await self._session.refresh(account)
+        return account
