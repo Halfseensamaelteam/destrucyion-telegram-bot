@@ -30,6 +30,7 @@ from telethon.tl.types import Message
 from app.core.logging import get_logger
 from app.services.capture import CaptureContext, MediaCaptureService
 from app.telegram.media import classify_message
+from app.telegram.metadata import extract_sender, extract_chat
 
 log = get_logger(__name__)
 
@@ -141,38 +142,30 @@ async def _build_context(
     user_id: int,
     media_info,
 ) -> CaptureContext:
-    """Extract all metadata from the Telethon event into a CaptureContext."""
-    # Chat metadata
+    """Extract all metadata from the Telethon event into a CaptureContext.
+
+    Uses app.telegram.metadata for robust sender/chat extraction.
+    All failures are caught — metadata errors must never block capture.
+    """
     source_chat_id = event.chat_id
-    source_chat_title: str | None = None
-    source_chat_username: str | None = None
 
+    # Chat metadata — best effort
+    chat_obj = None
     try:
-        chat = await event.get_chat()
-        if chat:
-            source_chat_title = getattr(chat, "title", None) or getattr(
-                chat, "first_name", None
-            )
-            source_chat_username = getattr(chat, "username", None)
+        chat_obj = await event.get_chat()
     except Exception:
-        pass  # Best effort — metadata failure must not break capture
+        pass
 
-    # Sender metadata
-    sender_telegram_id: int | None = None
-    sender_username: str | None = None
-    sender_display_name: str | None = None
+    chat_info = extract_chat(chat_obj, source_chat_id)
 
+    # Sender metadata — best effort
+    sender_obj = None
     try:
-        sender = await event.get_sender()
-        if sender:
-            sender_telegram_id = getattr(sender, "id", None)
-            sender_username = getattr(sender, "username", None)
-            first = getattr(sender, "first_name", None) or ""
-            last = getattr(sender, "last_name", None) or ""
-            full_name = f"{first} {last}".strip()
-            sender_display_name = full_name or None
+        sender_obj = await event.get_sender()
     except Exception:
-        pass  # Best effort
+        pass
+
+    sender_info = extract_sender(sender_obj)
 
     return CaptureContext(
         telegram_account_id=account_id,
@@ -180,9 +173,9 @@ async def _build_context(
         source_chat_id=source_chat_id,
         source_message_id=message.id,
         media_info=media_info,
-        source_chat_title=source_chat_title,
-        source_chat_username=source_chat_username,
-        sender_telegram_id=sender_telegram_id,
-        sender_username=sender_username,
-        sender_display_name=sender_display_name,
+        source_chat_title=chat_info.title,
+        source_chat_username=chat_info.username,
+        sender_telegram_id=sender_info.telegram_id,
+        sender_username=sender_info.username,
+        sender_display_name=sender_info.display_name,
     )
