@@ -33,13 +33,34 @@ async def run() -> None:
     log.info(
         "worker_starting",
         env=settings.app_env,
-        phase="1-skeleton",
+        phase="6-client-manager",
     )
-    # TODO (Phase 6): initialise TelegramClientManager
-    # TODO (Phase 6): load active telegram_accounts from DB
-    # TODO (Phase 6): start isolated Telethon clients
-    # TODO (Phase 6): await supervisor loop
-    log.info("worker_started", status="skeleton — no accounts loaded yet")
+    
+    from app.db.database import AsyncSessionLocal
+    from worker.supervisor import TelegramClientManager
+    
+    manager = TelegramClientManager(AsyncSessionLocal)
+    
+    # Catch SIGINT and SIGTERM to gracefully stop the manager
+    import signal
+    loop = asyncio.get_running_loop()
+    
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(manager.stop()))
+        except NotImplementedError:
+            pass # Windows doesn't fully support add_signal_handler
+            
+    await manager.start()
+    log.info("worker_started", status="manager running")
+    
+    try:
+        await manager.run_forever()
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await manager.stop()
+        log.info("worker_stopped")
 
 
 def main() -> None:
