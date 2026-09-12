@@ -37,16 +37,6 @@ FAKE_HASH = "abc123hash"
 # Helpers
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-async def user(db_session: AsyncSession):
-    repo = UserRepository(db_session)
-    return await repo.create(telegram_user_id=1001)
-
-
-@pytest.fixture
-async def account(db_session: AsyncSession, user):
-    repo = TelegramAccountRepository(db_session)
-    return await repo.create(user_id=user.id, phone_masked=_mask_phone(FAKE_PHONE))
 
 
 def valid_fernet_key() -> str:

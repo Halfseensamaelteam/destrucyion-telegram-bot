@@ -33,13 +33,15 @@ async def run() -> None:
     log.info(
         "worker_starting",
         env=settings.app_env,
-        phase="6-client-manager",
+        phase="7-media-capture",
     )
     
     from app.db.database import AsyncSessionLocal
+    from app.telegram.events import make_handler_factory
     from worker.supervisor import TelegramClientManager
     
-    manager = TelegramClientManager(AsyncSessionLocal)
+    handler_factory = make_handler_factory(AsyncSessionLocal)
+    manager = TelegramClientManager(AsyncSessionLocal, handler_factory=handler_factory)
     
     # Catch SIGINT and SIGTERM to gracefully stop the manager
     import signal
